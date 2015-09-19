@@ -1,16 +1,14 @@
 /*
  * ID3.cpp
  *
- *  Created on: Mar 19, 2015
+ *  Created on: Sep 19, 2015
  *      Author: th
  */
-#include "ID3.h"
 
+#include "ID3.h"
+#include <math.h>
 #include <fstream>
 #include <iostream>
-#include <sstream>
-#include <stdlib.h>
-#include <math.h>
 
 using std::ifstream;
 using std::ios;
@@ -19,7 +17,7 @@ using std::endl;
 using std::getline;
 using std::stringstream;
 
-ID3::ID3(string path, int segments, int minLeaf){
+ID3::ID3(string path, int minLeaf){
 	ifstream in;
 	string source;
 	bool data = 0;
@@ -28,12 +26,13 @@ ID3::ID3(string path, int segments, int minLeaf){
 	const string label3 = "@data";
 	has_real = 0;
 	this->root = new DecisionTreeNode();
-	this->segments = segments, this->minLeaf = minLeaf;
+	this->minLeaf = minLeaf;
 	relation = "";
 	in.open(path.c_str(), ios::in);
-	if (!in.is_open()) cout << "Â·Ÿ¶ŽíÎó";
+	if (!in.is_open()) cout << "路径错误";
 	while (!in.eof()){
 		getline(in, source);
+		if(""==source) break;
 		if (!label1.compare(source.substr(0, 10))) //@relation
 			relation = source.substr(10, source.length() - 10);
 		else if (!label2.compare(source.substr(0, 11))){ //@attribute
@@ -42,7 +41,7 @@ ID3::ID3(string path, int segments, int minLeaf){
 			Attribute_Names.push_back(source.substr(11, i - 11));
 			forecasting_attribute_name = source.substr(11, i - 11);
 			if (source[i + 1] == '{') i += 2;
-			else if (source.substr(i + 1, 4) == "real"){ //ÊµÊý
+			else if (source.substr(i + 1, 4) == "real"){ //实数
 				Attribute_Name_Values[Attribute_Names.back()].push_back("ReaL");
 				has_real = 1;
 				continue;
@@ -78,78 +77,18 @@ ID3::ID3(string path, int segments, int minLeaf){
 	forecasting_attribute_value_length = Attribute_Name_Values[forecasting_attribute_name].size();
 }
 
-void ID3::PreProcessor(){
-	if (has_real){
-		vector<map<string, double> > Real_Samples; //ÊµÊýµÄÊµÀý
-		vector<map<string, double> > MinMaxDistance; //Ž¢Žæœ«ÊµÊý·Ö¶ÎµÄÐÅÏ¢
-		//œ«SamplesÖÐµÄÊµÊýÊôÐÔŽæµœReal_SamplesÖÐ
-		for (vector<map<string, string> >::iterator i = Samples.begin(); i != Samples.end(); ++i){
-			map<string, double> real_item;
-			for (map<string, string>::iterator j = i->begin(); j != i->end(); ++j){
-				if (!Attribute_Name_Values[j->first][0].compare("ReaL")){
-					real_item[j->first] = atof(j->second.c_str());
-				}
-			}
-			Real_Samples.push_back(real_item);
-		}
-		//ŒÇÂŒ×îŽó×îÐ¡Öµ
-		MinMaxDistance.push_back(Real_Samples[0]);
-		MinMaxDistance.push_back(Real_Samples[0]);
-		MinMaxDistance.push_back(Real_Samples[0]);
-		for (vector<map<string, double> >::iterator i = Real_Samples.begin() + 1; i != Real_Samples.end(); ++i){
-			for (map<string, double>::iterator j = i->begin(); j != i->end(); ++j){
-				if (j->second < MinMaxDistance[0][j->first]){
-					MinMaxDistance[0][j->first] = j->second; //min
-				}
-				else if (j->second > MinMaxDistance[1][j->first]){
-					MinMaxDistance[1][j->first] = j->second; //max
-				}
-				if (i == Real_Samples.end() - 1){
-					MinMaxDistance[2][j->first] = (MinMaxDistance[1][j->first] - MinMaxDistance[0][j->first]) / (double)segments;
-				}
-			}
-		}
-		//œ«ÊµÊý·Ö¶Î£¬žüÐÂAttribute_Name_Values
-		stringstream ss_temp;
-		for (map<string, double>::iterator i = MinMaxDistance[0].begin(); i != MinMaxDistance[0].end(); ++i){ //±éÀúÊµÊýµÄname
-			Attribute_Name_Values[i->first].pop_back();
-			double value_temp = i->second;
-			for (int j = 0; j < segments; ++j){
-				string value_l, value_h;
-				ss_temp << value_temp;
-				ss_temp >> value_l;
-				ss_temp.clear();
-				value_temp += MinMaxDistance[2][i->first];
-				ss_temp << value_temp;
-				ss_temp >> value_h;
-				ss_temp.clear();
-				Attribute_Name_Values[i->first].push_back(value_l + "-" + value_h);
-			}
-		}
-		//žüÐÂSamples£¬œ«ÊµÊý¹éÀàµœÒÑ·ÖºÃµÄ¶ÎÖÐ
-		for (vector<map<string, double> >::iterator i = Real_Samples.begin(); i != Real_Samples.end(); ++i){ //ÐÐ£¬ÊµÀý
-			for (map<string, double>::iterator j = i->begin(); j != i->end(); ++j){ //ÁÐ£¬ÊôÐÔÃû
-				int k;
-				for (k = 0; j->second > MinMaxDistance[0][j->first] + MinMaxDistance[2][j->first] * (k + 1); ++k);
-				Samples[i - Real_Samples.begin()][j->first] = Attribute_Name_Values[j->first][k];
-			}
-		}
-		forecasting_attribute_value_length = Attribute_Name_Values[forecasting_attribute_name].size();
-	}
-}
-
-double ID3::Information(map<string, int>& amount, int number)const{
+double ID3::Information(const map<string, int>& amount, int number)const{
 	double ans = 0;
-	for (map<string, int>::iterator i = amount.begin(); i != amount.end(); ++i){
+	for (map<string, int>::const_iterator i = amount.begin(); i != amount.end(); ++i){
 		ans += (-i->second / (double)number*log(i->second / (double)number) / log(2.0));
 	}
 	return ans;
 }
 
-double ID3::ComputeEntropy(vector<map<string, string> >& remain_Samples, string attribute_name, string attribute_value, int& number)const{
+double ID3::ComputeEntropy(const vector<map<string, string> >& remain_Samples, string attribute_name, string attribute_value, int& number)const{
 	map<string, int> amount;
 	number = 0;
-	for (vector<map<string, string> >::iterator i = remain_Samples.begin(); i != remain_Samples.end(); ++i){
+	for (vector<map<string, string> >::const_iterator i = remain_Samples.begin(); i != remain_Samples.end(); ++i){
 		if (!attribute_value.compare(i->at(attribute_name))){
 			++amount[i->at(forecasting_attribute_name)];
 			++number;
@@ -158,69 +97,69 @@ double ID3::ComputeEntropy(vector<map<string, string> >& remain_Samples, string 
 	return Information(amount, number);
 }
 
-double ID3::ComputeEntropy(vector<map<string, string> >& remain_Samples, int& number)const{
+double ID3::ComputeEntropy(const vector<map<string, string> >& remain_Samples, int& number)const{
 	map<string, int> amount;
 	number = 0;
-	for (vector<map<string, string> >::iterator i = remain_Samples.begin(); i != remain_Samples.end(); ++i){
+	for (vector<map<string, string> >::const_iterator i = remain_Samples.begin(); i != remain_Samples.end(); ++i){
 		++amount[i->at(forecasting_attribute_name)];
 		++number;
 	}
 	return Information(amount, number);
 }
 
-double ID3::ComputeGain(vector<map<string, string> >& remain_Samples, string attribute_name){
-	int sum, amount; //sumÎªÊµÀý×ÜÊý£¬amountÎªÊôÐÔÖµÏÂÊµÀýžöÊý
+double ID3::ComputeGain(const vector<map<string, string> >& remain_Samples, string attribute_name)const{
+	int sum, amount; //sum为实例总数，amount为属性值下实例个数
 	double parent_entropy = ComputeEntropy(remain_Samples, sum);
 	double children_entropy = 0;
-	for (unsigned int i = 0; i < Attribute_Name_Values[attribute_name].size(); ++i){
-		double temp = ComputeEntropy(remain_Samples, attribute_name, Attribute_Name_Values[attribute_name][i], amount);
+	for (unsigned int i = 0; i < Attribute_Name_Values.at(attribute_name).size(); ++i){
+		double temp = ComputeEntropy(remain_Samples, attribute_name, Attribute_Name_Values.at(attribute_name)[i], amount);
 		children_entropy += (double)amount / sum*temp;
 	}
 	return parent_entropy - children_entropy;
 }
 
-string ID3::IsPure(vector<map<string, string> >& remain_Samples)const{
-	string forecasting_attribute_value = remain_Samples[0][forecasting_attribute_name];
-	for (vector<map<string, string> >::iterator i = remain_Samples.begin() + 1; i != remain_Samples.end(); ++i){
+string ID3::IsPure(const vector<map<string, string> >& remain_Samples)const{
+	string forecasting_attribute_value = remain_Samples[0].at(forecasting_attribute_name);
+	for (vector<map<string, string> >::const_iterator i = remain_Samples.begin() + 1; i != remain_Samples.end(); ++i){
 		if (forecasting_attribute_value.compare(i->at(forecasting_attribute_name)))
 			return "ImpurE";
 	}
 	return forecasting_attribute_value;
 }
 
-string ID3::MajorityDecision(vector<map<string, string> >& remain_Samples)const{
+string ID3::MajorityDecision(const vector<map<string, string> >& remain_Samples)const{
 	if (remain_Samples.empty()) return "unknown";
 	map<string, int> count;
 	map<string, int>::iterator ans;
 	int max = 0;
-	for (vector<map<string, string> >::iterator i = remain_Samples.begin(); i != remain_Samples.end(); ++i){
+	for (vector<map<string, string> >::const_iterator i = remain_Samples.begin(); i != remain_Samples.end(); ++i){
 		++count[i->at(forecasting_attribute_name)];
 	}
 	for (map<string, int>::iterator i = count.begin(); i != count.end(); ++i){
-		if ((*i).second > max){
-			max = (*i).second;
+		if (i->second > max){
+			max = i->second;
 			ans = i;
 		}
 	}
-	return (*ans).first;
+	return ans->first;
 }
 
-ID3::DecisionTreeNode* ID3::BuildDecisionTree(DecisionTreeNode* current_node, vector<map<string, string> > remain_Samples, vector<string> remain_Attribute_Names){
-	//ÖÕÖ¹ÌõŒþ
-	if (remain_Samples.size() <= minLeaf){ //Ê£ÓàÊµÀýÊýÁ¿Ð¡ÓÚãÐÖµ
+ID3::DecisionTreeNode* ID3::BuildDiscreteDecisionTree(DecisionTreeNode* current_node, vector<map<string, string> > remain_Samples, vector<string> remain_Attribute_Names){
+	//终止条件
+	if (remain_Samples.size() <= (unsigned)minLeaf){ //剩余实例数量小于阈值
 		current_node->attribute_name = MajorityDecision(remain_Samples);
 		return current_node;
 	}
 	string pure = IsPure(remain_Samples);
-	if (pure.compare("ImpurE")){ //ÐÅÏ¢ÖµÎª0
+	if (pure.compare("ImpurE")){ //信息值为0
 		current_node->attribute_name = pure;
 		return current_node;
 	}
-	if (remain_Attribute_Names.empty()){ //Ã»ÓÐÊ£ÓàµÄÊôÐÔÃû
+	if (remain_Attribute_Names.empty()){ //没有剩余的属性名
 		current_node->attribute_name = MajorityDecision(remain_Samples);
 		return current_node;
 	}
-	//ÕÒ×îŽóÐÅÏ¢ÔöÒæ
+	//找最大信息增益
 	double max_gain = -1, temp_gain;
 	vector<string>::iterator chosen_attribute_name;
 	vector<string>::iterator i;
@@ -232,24 +171,24 @@ ID3::DecisionTreeNode* ID3::BuildDecisionTree(DecisionTreeNode* current_node, ve
 		}
 	}
 	current_node->attribute_name = *chosen_attribute_name;
-	//¹¹œš×ÓœÚµãµÄremain_Attribute_Names
+	//构建子节点的remain_Attribute_Names
 	vector<map<string, string> > new_remain_Samples;
 	vector<string> new_remain_Attribute_Names;
 	for (i = remain_Attribute_Names.begin(); i != remain_Attribute_Names.end(); ++i){
 		if ((*i).compare(*chosen_attribute_name))
 			new_remain_Attribute_Names.push_back(*i);
 	}
-	//žùŸÝÈ·¶šµÄnameÉú³ÉÏàÓŠvalueµÄ×ÓœÚµã
+	//根据确定的name生成相应value的子节点
 	for (i = Attribute_Name_Values[*chosen_attribute_name].begin(); i != Attribute_Name_Values[*chosen_attribute_name].end(); ++i){
 		DecisionTreeNode* child_node = new DecisionTreeNode();
 		child_node->attribute_pre_value = *i;
-		for (vector<map<string, string> >::iterator j = remain_Samples.begin(); j != remain_Samples.end(); ++j){ //¹¹œš×ÓœÚµãµÄremain_Samples
+		for (vector<map<string, string> >::iterator j = remain_Samples.begin(); j != remain_Samples.end(); ++j){ //构建子节点的remain_Samples
 			if (!(*i).compare(j->at(*chosen_attribute_name))){
 				new_remain_Samples.push_back(*j);
 			}
 		}
-		//µÝ¹éÉú³É×ÓœÚµã
-		BuildDecisionTree(child_node, new_remain_Samples, new_remain_Attribute_Names);
+		//递归生成子节点
+		BuildDiscreteDecisionTree(child_node, new_remain_Samples, new_remain_Attribute_Names);
 		current_node->children.push_back(child_node);
 		new_remain_Samples.clear();
 	}
@@ -257,26 +196,32 @@ ID3::DecisionTreeNode* ID3::BuildDecisionTree(DecisionTreeNode* current_node, ve
 }
 
 void ID3::BuildDecisionTree(){
-	vector<string> current_Attribute_Names;
-	//²»¿ŒÂÇforecastingµÄÊôÐÔÃû
-	PreProcessor();
-	current_Attribute_Names.insert(current_Attribute_Names.begin(), Attribute_Names.begin(), Attribute_Names.end() - 1);
-	root = BuildDecisionTree(root, Samples, current_Attribute_Names);
-}
-
-void ID3::BuildDecisionTree(double percentage){
-	if (percentage < 0 || percentage>1){
-		cout << "BuildDecisionTree(double percentage)²ÎÊýŽíÎó";
+	if (has_real){
+		cout << "ID3不支持数值类属性" << endl;
 		return;
 	}
 	vector<string> current_Attribute_Names;
-	PreProcessor();
+	//不考虑forecasting的属性名
+	current_Attribute_Names.insert(current_Attribute_Names.begin(), Attribute_Names.begin(), Attribute_Names.end() - 1);
+	BuildDiscreteDecisionTree(root, Samples, current_Attribute_Names);
+}
+
+void ID3::BuildDecisionTree(double percentage){
+	if (has_real){
+		cout << "ID3不支持数值类属性" << endl;
+		return;
+	}
+	if (percentage < 0 || percentage>1){
+		cout << "BuildDecisionTree(double percentage)参数错误";
+		return;
+	}
+	vector<string> current_Attribute_Names;
 	current_Attribute_Names.insert(current_Attribute_Names.begin(), Attribute_Names.begin(), Attribute_Names.end() - 1);
 	int training_size = (int)((1.0 - percentage)*Samples.size());
 	int test_size = Samples.size() - training_size;
-	Test_Samples.insert(Test_Samples.begin(), Samples.end() - test_size, Samples.end()); //ºópercentage±ÈÀýµÄÊµÀý×÷Îª²âÊÔ
+	Test_Samples.insert(Test_Samples.begin(), Samples.end() - test_size, Samples.end()); //后percentage比例的实例作为测试
 	Samples.erase(Samples.end() - test_size, Samples.end());
-	root = BuildDecisionTree(root, Samples, current_Attribute_Names);
+	BuildDiscreteDecisionTree(root, Samples, current_Attribute_Names);
 }
 
 void ID3::PrintDecisionTree(ID3::DecisionTreeNode* node, int depth)const{
@@ -311,11 +256,11 @@ ID3::~ID3(){
 
 string ID3::Predict(map<string, string> example)const{
 	if (root == NULL){
-		cout << "ÇëÏÈÉú³ÉŸö²ßÊ÷" << endl;
+		cout << "请先生成决策树" << endl;
 		return "ERROR";
 	}
 	DecisionTreeNode* p = root;
-	vector<ID3::DecisionTreeNode*>::iterator i = p->children.begin();
+	vector<ID3::DecisionTreeNode*>::const_iterator i = p->children.begin();
 	while (i != p->children.end()){
 		if (!example[p->attribute_name].compare((*i)->attribute_pre_value)){
 			p = *i;
@@ -327,18 +272,26 @@ string ID3::Predict(map<string, string> example)const{
 	return p->attribute_name;
 }
 
-double ID3::Predict(){
+double ID3::Predict()const{
 	if (Test_Samples.empty()){
-		cout << "²âÊÔŒ¯Îª¿Õ£¬ÇëÓÃBuildDecisionTree(double percentage)¹¹Ôì";
+		cout << "测试集为空，请用BuildDecisionTree(double percentage)构造";
 		return 0;
 	}
 	int correct = 0;
-	for (vector<map<string, string> >::iterator i = Test_Samples.begin(); i != Test_Samples.end(); ++i){
+	for (vector<map<string, string> >::const_iterator i = Test_Samples.begin(); i != Test_Samples.end(); ++i){
 		if (!(i->at(forecasting_attribute_name)).compare(Predict(*i))){
 			++correct;
 		}
 	}
 	return (double)correct / Test_Samples.size();
+}
+
+bool ID3::Gethasreal()const{
+	return has_real;
+}
+
+void ID3::Sethasreal(bool flag){
+	has_real = flag;
 }
 
 void ID3::test(){
