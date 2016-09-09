@@ -16,7 +16,7 @@ using std::stringstream;
 double C4d5::ComputeGainRatio(const vector<map<string, string> >& remain_Samples, string attribute_name)const{
 	int number;
 	double temp = ComputeSplitEntropy(remain_Samples, attribute_name, number);
-	if (!temp) return 65535; //分裂信息值为0时返回最大值
+	if (!temp) return 0; //分裂信息值为0时，即只有一个属性值下有样本（训练样本过少的结果）。选取该属性名进行分裂无意义，应该留置最后进行多数决决策，也便于执行后剪枝。
 	else return ComputeGain(remain_Samples, attribute_name) / temp;
 }
 
